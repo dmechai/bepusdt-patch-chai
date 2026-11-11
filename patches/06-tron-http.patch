@@ -1,0 +1,123 @@
+--- a/app/task/tron.go
++++ b/app/task/tron.go
+@@ -71,19 +71,11 @@
+ 		return
+ 	}
+ 
+-	conn, err := t.client()
+-	if err != nil {
+-		log.Task.Error("grpc.NewClient", err)
+-
+-		return
+-	}
+-
+ 	var ctx, cancel = context.WithTimeout(context.Background(), time.Second*15)
+-	block, err1 := api.NewWalletClient(conn).GetNowBlock2(ctx, nil)
+ 	defer cancel()
+-
++	block, err1 := t.fetchNowBlock(ctx)
+ 	if err1 != nil {
+-		log.Task.Warn("GetNowBlock2 超时：", err1)
++		log.Task.Warn(t.blockFetchLabel()+" 失败：", err1)
+ 
+ 		return
+ 	}
+@@ -121,6 +113,11 @@
+ 	}
+ 
+ 	start, end := blockapi.New().GetBoundaryHeights(startAt, endAt, conf.Tron)
++	if start <= 0 || end <= 0 || end < start {
++		log.Task.Warn("Tron 回溯区块高度无效：", start, end)
++
++		return
++	}
+ 	for i := int(start); i <= int(end); i++ {
+ 		select {
+ 		case <-ctx.Done():
+@@ -165,21 +162,13 @@
+ func (t *tron) blockParse(n any) {
+ 	var num = n.(int)
+ 
+-	var conn *grpc.ClientConn
+-	var err error
+-	if conn, err = t.client(); err != nil {
+-		log.Task.Error("grpc.NewClient", err)
+-
+-		return
+-	}
+-
+-	var ctx, cancel = context.WithTimeout(context.Background(), time.Second*5)
+-	bok, err2 := api.NewWalletClient(conn).GetBlockByNum2(ctx, &api.NumberMessage{Num: int64(num)})
++	var ctx, cancel = context.WithTimeout(context.Background(), time.Second*30)
++	bok, err2 := t.fetchBlockByNum(ctx, num)
+ 	cancel()
+ 	if err2 != nil {
+ 		conf.RecordFailure(conf.Tron)
+ 		t.scheduleBlockRetry(num, 0)
+-		log.Task.Warn("GetBlockByNum2 ", err2)
++		log.Task.Warn(t.blockByNumLabel()+" ", err2)
+ 
+ 		return
+ 	}
+@@ -408,6 +397,12 @@
+ 			}
+ 		}
+ 
++		if tronEndpointUsesHTTP(model.Endpoint(conf.Tron)) {
++			t.confirmOrderHTTP(ctx, o)
++
++			return
++		}
++
+ 		conn, err := t.client()
+ 		if err != nil {
+ 			log.Task.Error("grpc.NewClient", err)
+@@ -560,6 +555,48 @@
+ 	return time.Duration(1<<uint(attempt-1)) * 5 * time.Second
+ }
+ 
++func (t *tron) blockFetchLabel() string {
++	if tronEndpointUsesHTTP(model.Endpoint(conf.Tron)) {
++		return "Tron HTTP getnowblock"
++	}
++
++	return "GetNowBlock2"
++}
++
++func (t *tron) blockByNumLabel() string {
++	if tronEndpointUsesHTTP(model.Endpoint(conf.Tron)) {
++		return "Tron HTTP getblockbynum"
++	}
++
++	return "GetBlockByNum2"
++}
++
++func (t *tron) confirmOrderHTTP(ctx context.Context, o model.Order) {
++	if o.TradeType == model.TronTrx {
++		trans, err := t.fetchTransactionByID(ctx, o.RefHash)
++		if err != nil {
++			log.Task.Error("Tron HTTP gettransactionbyid", err)
++
++			return
++		}
++		if len(trans.GetRet()) > 0 && trans.GetRet()[0].ContractRet == core.Transaction_Result_SUCCESS {
++			markFinalConfirmed(o)
++		}
++
++		return
++	}
++
++	info, err := t.fetchTransactionInfoByID(ctx, o.RefHash)
++	if err != nil {
++		log.Task.Error("Tron HTTP gettransactioninfobyid", err)
++
++		return
++	}
++	if info.GetReceipt().GetResult() == core.Transaction_Result_SUCCESS {
++		markFinalConfirmed(o)
++	}
++}
++
+ func (t *tron) client() (*grpc.ClientConn, error) {
+ 	var endpoint = model.Endpoint(conf.Tron)
+ 

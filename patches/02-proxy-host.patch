@@ -1,0 +1,30 @@
+--- a/app/handler/epusdt/epusdt.go
++++ b/app/handler/epusdt/epusdt.go
+@@ -124,11 +124,8 @@
+ 		return
+ 	}
+ 
+-	// 解析请求地址
+-	host := "http://" + ctx.Request.Host
+-	if ctx.Request.TLS != nil {
+-		host = "https://" + ctx.Request.Host
+-	}
++	// 解析请求地址，兼容 Nginx 等 TLS 终止反向代理
++	host := utils.GetRequestHost(ctx.Request)
+ 
+ 	if req.Fiat == "" {
+ 		req.Fiat = model.CNY
+@@ -176,11 +173,8 @@
+ 		return
+ 	}
+ 
+-	// 解析请求地址
+-	host := "http://" + ctx.Request.Host
+-	if ctx.Request.TLS != nil {
+-		host = "https://" + ctx.Request.Host
+-	}
++	// 解析请求地址，兼容 Nginx 等 TLS 终止反向代理
++	host := utils.GetRequestHost(ctx.Request)
+ 
+ 	order, ok := loadPayOrder(ctx, req.TradeID)
+ 	if !ok {

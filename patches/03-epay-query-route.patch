@@ -1,0 +1,10 @@
+--- a/app/router/epay.go
++++ b/app/router/epay.go
+@@ -10,5 +10,7 @@
+ 	{
+ 		engine.POST("/submit.php", epHdr.Submit)
+ 		engine.GET("/submit.php", epHdr.Submit)
++		engine.GET("/api.php", epHdr.QueryOrder)
++		engine.POST("/api.php", epHdr.QueryOrder)
+ 	}
+ }

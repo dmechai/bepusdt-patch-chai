@@ -1,0 +1,78 @@
+name: Sync BEpusdt upstream patches
+
+on:
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Upstream tag or commit; leave empty for latest release"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patch repository
+        uses: actions/checkout@v4
+
+      - name: Resolve upstream reference
+        id: release
+        env:
+          UPSTREAM_REF: ${{ inputs.upstream_ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -n "${UPSTREAM_REF}" ]]; then
+            ref="${UPSTREAM_REF}"
+          else
+            ref=$(./scripts/latest-release.sh)
+          fi
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+          echo "Using upstream ref: ${ref}"
+
+      - name: Prepare patched source
+        id: prepare
+        env:
+          UPSTREAM_REF: ${{ steps.release.outputs.ref }}
+        run: |
+          ./scripts/prepare-source.sh "${UPSTREAM_REF}" upstream-src
+          cat upstream-src/.bepusdt-patch-info
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: upstream-src/go.mod
+          cache-dependency-path: upstream-src/go.sum
+
+      - name: Test patched payment paths
+        working-directory: upstream-src
+        run: go test ./app/handler/epay ./app/model ./app/task
+
+      - name: Notify Telegram
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS: ${{ job.status }}
+          UPSTREAM_REF: ${{ steps.release.outputs.ref }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ -z "${TELEGRAM_BOT_TOKEN}" || -z "${TELEGRAM_CHAT_ID}" ]]; then
+            echo "Telegram secrets are not configured; skipping notification."
+            exit 0
+          fi
+          if [[ "${JOB_STATUS}" == "success" ]]; then
+            text=$(printf 'BEpusdt 上游补丁检查成功\n上游: %s\n结果: 本地补丁可以合并，测试通过\n记录: %s' "${UPSTREAM_REF}" "${RUN_URL}")
+          else
+            text=$(printf 'BEpusdt 上游补丁检查失败\n上游: %s\n结果: 补丁冲突或测试失败，生产未自动更新\n记录: %s' "${UPSTREAM_REF:-未知}" "${RUN_URL}")
+          fi
+          payload=$(jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$text" '{chat_id:$chat_id,text:$text}')
+          curl --fail --silent --show-error --request POST \
+            --header "Content-Type: application/json" \
+            --data "$payload" \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"

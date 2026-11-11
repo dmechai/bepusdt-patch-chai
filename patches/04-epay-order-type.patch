@@ -1,0 +1,30 @@
+diff --git a/app/model/order.go b/app/model/order.go
+index ab49b74..df2aaa8 100644
+--- a/app/model/order.go
++++ b/app/model/order.go
+@@ -58,6 +58,7 @@ const (
+ 	OrderApiTypeEpusdt      = "epusdt"       // epusdt
+ 	OrderApiTypeEpusdtOrder = "epusdt_order" // epusdt create-order
+ 	OrderApiTypeEpay        = "epay"         // 彩虹易支付
++	OrderApiTypeEpayOrder   = "epay_order"   // 彩虹易支付多币种收银台
+ 	OrderApiTypeAdmin       = "admin"        // 管理后台
+ )
+ 
+@@ -116,7 +117,7 @@ func (o *Order) CanReselectPayment() bool {
+ 		return false
+ 	}
+ 
+-	if o.ApiType != OrderApiTypeEpusdtOrder && o.ApiType != OrderApiTypeAdmin {
++	if o.ApiType != OrderApiTypeEpusdtOrder && o.ApiType != OrderApiTypeEpayOrder && o.ApiType != OrderApiTypeAdmin {
+ 		return false
+ 	}
+ 
+@@ -207,7 +208,7 @@ func (o *Order) GetTxUrl() string {
+ 
+ func (o *Order) RedirectUrl() string {
+ 	var redirect = o.ReturnUrl
+-	if o.Status == OrderStatusSuccess && o.ApiType == OrderApiTypeEpay {
++	if o.Status == OrderStatusSuccess && (o.ApiType == OrderApiTypeEpay || o.ApiType == OrderApiTypeEpayOrder) {
+ 		redirect = fmt.Sprintf("%s?%s", redirect, o.BuildNotifyParams())
+ 	}
+ 

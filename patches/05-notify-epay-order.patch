@@ -1,0 +1,11 @@
+--- a/app/task/notify/notify.go
++++ b/app/task/notify/notify.go
+@@ -42,7 +42,7 @@
+ 	defer cancel()
+ 
+ 	var err error
+-	if order.ApiType == model.OrderApiTypeEpay {
++	if order.ApiType == model.OrderApiTypeEpay || order.ApiType == model.OrderApiTypeEpayOrder {
+ 		err = epay(ctx, order)
+ 	} else {
+ 		err = epusdt(ctx, order)

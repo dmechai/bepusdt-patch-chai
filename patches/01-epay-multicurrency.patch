@@ -1,0 +1,52 @@
+--- a/app/handler/epay/epay.go
++++ b/app/handler/epay/epay.go
+@@ -16,6 +16,8 @@
+ 
+ const Pid = "1000" // 固定商户号
+ 
++const MultiCurrencyType = "crypto"
++
+ type Epay struct {
+ }
+ 
+@@ -86,7 +88,7 @@
+ 		return
+ 	}
+ 
+-	var order, err2 = model.StartBuildOrder(model.OrderParams{
++	params := model.OrderParams{
+ 		Money:       money,
+ 		ApiType:     model.OrderApiTypeEpay,
+ 		Address:     data.Address,
+@@ -98,18 +100,25 @@
+ 		Timeout:     cast.ToInt64(data.Timeout),
+ 		Rate:        data.Rate,
+ 		Fiat:        data.Fiat,
+-	})
++	}
++
++	var order model.Order
++	var err2 error
++	if data.Type == MultiCurrencyType {
++		params.ApiType = model.OrderApiTypeEpayOrder
++		params.TradeType = ""
++		order, err2 = model.BuildPendingOrder(params)
++	} else {
++		order, err2 = model.StartBuildOrder(params)
++	}
+ 	if err2 != nil {
+ 		ctx.String(200, fmt.Sprintf("订单创建失败：%v", err2))
+ 
+ 		return
+ 	}
+ 
+-	// 解析请求地址
+-	var host = "http://" + ctx.Request.Host
+-	if ctx.Request.TLS != nil {
+-		host = "https://" + ctx.Request.Host
+-	}
++	// 解析请求地址，兼容 Nginx 等 TLS 终止反向代理
++	var host = utils.GetRequestHost(ctx.Request)
+ 
+ 	ctx.Redirect(http.StatusFound, model.CheckoutUrl(host, order.TradeId))
+ }
